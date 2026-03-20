@@ -1,0 +1,460 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PRSTACK_HOME="$(cd "${SCRIPT_DIR}/.." && pwd)"
+ROOT_DIR="${PRSTACK_PROJECT_ROOT:-$(pwd)}"
+CONFIG_PATH="${PRSTACK_CONFIG:-${ROOT_DIR}/.prstack/project.env}"
+STATE_DIR="${ROOT_DIR}/.prstack/state"
+REPORT_DIR="${STATE_DIR}/reports"
+SLICE_DIR="${STATE_DIR}/slices"
+TEMPLATE_DIR="${PRSTACK_HOME}/templates"
+RALPH_SOURCE_DIR="${PRSTACK_HOME}/ralph"
+NOW="$(date +%F)"
+
+INSTALL_CMD=""
+DEV_CMD=""
+FRONTEND_BUILD_CMD=""
+BACKEND_TEST_CMD=""
+QA_CMD=""
+RALPH_ENABLED="true"
+
+load_config() {
+  if [[ -f "${CONFIG_PATH}" ]]; then
+    # shellcheck source=/dev/null
+    source "${CONFIG_PATH}"
+  fi
+}
+
+render_template() {
+  local template_path="$1"
+  local output_path="$2"
+  local title="${3:-Current Implementation Slice}"
+
+  sed \
+    -e "s/{{DATE}}/${NOW}/g" \
+    -e "s/{{TITLE}}/${title}/g" \
+    -e "s#{{PROJECT_ROOT}}#${ROOT_DIR}#g" \
+    "${template_path}" > "${output_path}"
+}
+
+run_configured_command() {
+  local cmd="$1"
+  if [[ -z "${cmd}" ]]; then
+    printf 'Missing configured command in %s\n' "${CONFIG_PATH}" >&2
+    exit 1
+  fi
+  (cd "${ROOT_DIR}" && bash -lc "${cmd}")
+}
+
+usage() {
+  cat <<'EOF'
+Usage:
+  prstack bootstrap
+  prstack install
+  prstack dev
+  prstack plan "Title"
+  prstack slice "Title"
+  prstack ralph-install
+  prstack ralph-ping
+  prstack loop [n] [--no-commit]
+  prstack ceo-review
+  prstack security-review
+  prstack review
+  prstack qa
+  prstack ship
+  prstack handoff
+  prstack status
+EOF
+}
+
+bootstrap() {
+  mkdir -p "${ROOT_DIR}/.prstack" "${STATE_DIR}" "${REPORT_DIR}" "${SLICE_DIR}"
+
+  if [[ ! -f "${STATE_DIR}/mission.md" ]]; then
+    cp "${TEMPLATE_DIR}/mission.md" "${STATE_DIR}/mission.md"
+  fi
+
+  if [[ ! -f "${STATE_DIR}/tasks.md" ]]; then
+    cp "${TEMPLATE_DIR}/tasks.md" "${STATE_DIR}/tasks.md"
+  fi
+
+  if [[ ! -f "${STATE_DIR}/current-slice.md" ]]; then
+    render_template "${TEMPLATE_DIR}/current-slice.md" "${STATE_DIR}/current-slice.md"
+  fi
+
+  if [[ ! -f "${REPORT_DIR}/review.md" ]]; then
+    render_template "${TEMPLATE_DIR}/review.md" "${REPORT_DIR}/review.md"
+  fi
+
+  if [[ ! -f "${REPORT_DIR}/qa.md" ]]; then
+    render_template "${TEMPLATE_DIR}/qa.md" "${REPORT_DIR}/qa.md"
+  fi
+
+  if [[ ! -f "${REPORT_DIR}/ceo-review.md" ]]; then
+    render_template "${TEMPLATE_DIR}/ceo-review.md" "${REPORT_DIR}/ceo-review.md"
+  fi
+
+  if [[ ! -f "${REPORT_DIR}/security-review.md" ]]; then
+    render_template "${TEMPLATE_DIR}/security-review.md" "${REPORT_DIR}/security-review.md"
+  fi
+
+  if [[ ! -f "${REPORT_DIR}/handoff.md" ]]; then
+    render_template "${TEMPLATE_DIR}/handoff.md" "${REPORT_DIR}/handoff.md"
+  fi
+
+  printf 'Initialized prstack state in %s\n' "${STATE_DIR}"
+}
+
+status() {
+  load_config
+  bootstrap >/dev/null
+
+  printf 'Project Root: %s\n' "${ROOT_DIR}"
+  printf 'Config: %s\n' "${CONFIG_PATH}"
+  printf 'Mission: %s\n' "${STATE_DIR}/mission.md"
+  printf 'Tasks: %s\n' "${STATE_DIR}/tasks.md"
+  printf 'Current Slice: %s\n' "${STATE_DIR}/current-slice.md"
+  printf 'Review Report: %s\n' "${REPORT_DIR}/review.md"
+  printf 'QA Report: %s\n' "${REPORT_DIR}/qa.md"
+  printf 'CEO Review: %s\n' "${REPORT_DIR}/ceo-review.md"
+  printf 'Security Review: %s\n' "${REPORT_DIR}/security-review.md"
+  printf 'Handoff: %s\n' "${REPORT_DIR}/handoff.md"
+  printf 'Ralph Installed: %s\n' "$(if [[ -f "${ROOT_DIR}/.agents/ralph/loop.sh" ]]; then echo yes; else echo no; fi)"
+
+  if [[ -f "${STATE_DIR}/tasks.md" ]]; then
+    printf '\nOpen tasks:\n'
+    grep '^\- \[ \]' "${STATE_DIR}/tasks.md" || true
+  fi
+}
+
+install() {
+  load_config
+  run_configured_command "${INSTALL_CMD}"
+}
+
+dev() {
+  load_config
+  bootstrap
+  run_configured_command "${DEV_CMD}"
+}
+
+plan() {
+  bootstrap >/dev/null
+  local title="${1:-Current Implementation Slice}"
+  render_template "${TEMPLATE_DIR}/current-slice.md" "${STATE_DIR}/current-slice.md" "${title}"
+  printf 'Updated current slice: %s\n' "${STATE_DIR}/current-slice.md"
+}
+
+slugify() {
+  printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//' | sed 's/-$//'
+}
+
+slice() {
+  bootstrap >/dev/null
+  local title="${1:-Implementation Slice}"
+  local slug
+  slug="$(slugify "${title}")"
+  local output="${SLICE_DIR}/${NOW}-${slug}.md"
+  render_template "${TEMPLATE_DIR}/current-slice.md" "${output}" "${title}"
+  cp "${output}" "${STATE_DIR}/current-slice.md"
+  printf 'Created slice: %s\n' "${output}"
+}
+
+ralph_install() {
+  mkdir -p "${ROOT_DIR}/.agents/ralph" "${ROOT_DIR}/.agents/tasks" "${ROOT_DIR}/.ralph"
+  cp "${RALPH_SOURCE_DIR}/loop.sh" "${ROOT_DIR}/.agents/ralph/loop.sh"
+  cp "${RALPH_SOURCE_DIR}/agents.sh" "${ROOT_DIR}/.agents/ralph/agents.sh"
+  cp "${RALPH_SOURCE_DIR}/log-activity.sh" "${ROOT_DIR}/.agents/ralph/log-activity.sh"
+  cp "${RALPH_SOURCE_DIR}/PROMPT_build.md" "${ROOT_DIR}/.agents/ralph/PROMPT_build.md"
+  cp "${RALPH_SOURCE_DIR}/config.sh" "${ROOT_DIR}/.agents/ralph/config.sh"
+  mkdir -p "${ROOT_DIR}/.agents/ralph/references"
+  cp "${RALPH_SOURCE_DIR}/references/GUARDRAILS.md" "${ROOT_DIR}/.agents/ralph/references/GUARDRAILS.md"
+  cp "${RALPH_SOURCE_DIR}/references/CONTEXT_ENGINEERING.md" "${ROOT_DIR}/.agents/ralph/references/CONTEXT_ENGINEERING.md"
+  chmod +x "${ROOT_DIR}/.agents/ralph/loop.sh" "${ROOT_DIR}/.agents/ralph/log-activity.sh"
+  if [[ ! -f "${ROOT_DIR}/.agents/tasks/prd.json" ]]; then
+    cp "${PRSTACK_HOME}/examples/city-expansion-sim/prd.example.json" "${ROOT_DIR}/.agents/tasks/prd.json"
+  fi
+  printf 'Installed Ralph assets into %s/.agents/ralph\n' "${ROOT_DIR}"
+}
+
+ensure_ralph() {
+  load_config
+  if [[ "${RALPH_ENABLED}" != "true" ]]; then
+    printf 'Ralph is disabled in %s\n' "${CONFIG_PATH}" >&2
+    exit 1
+  fi
+  if [[ ! -x "${ROOT_DIR}/node_modules/.bin/ralph" && ! -x "$(command -v ralph 2>/dev/null || true)" ]]; then
+    printf 'Ralph is not installed. Add it to the project or install globally.\n' >&2
+    exit 1
+  fi
+  if [[ ! -f "${ROOT_DIR}/.agents/ralph/loop.sh" ]]; then
+    printf 'Ralph assets are missing. Run prstack ralph-install first.\n' >&2
+    exit 1
+  fi
+}
+
+ralph_ping() {
+  ensure_ralph
+  (cd "${ROOT_DIR}" && npx ralph ping --agent=codex)
+}
+
+review() {
+  load_config
+  bootstrap >/dev/null
+  local frontend_status="skip"
+  local backend_status="skip"
+  local frontend_output=""
+  local backend_output=""
+
+  if [[ -n "${FRONTEND_BUILD_CMD}" ]]; then
+    frontend_status="pass"
+    if ! frontend_output="$(cd "${ROOT_DIR}" && bash -lc "${FRONTEND_BUILD_CMD}" 2>&1)"; then
+      frontend_status="fail"
+    fi
+  fi
+
+  if [[ -n "${BACKEND_TEST_CMD}" ]]; then
+    backend_status="pass"
+    if ! backend_output="$(cd "${ROOT_DIR}" && bash -lc "${BACKEND_TEST_CMD}" 2>&1)"; then
+      backend_status="fail"
+    fi
+  fi
+
+  cat > "${REPORT_DIR}/review.md" <<EOF
+# Review Report
+
+## Date
+
+${NOW}
+
+## Summary
+
+- frontend build: ${frontend_status}
+- backend tests: ${backend_status}
+
+## Findings
+
+$(if [[ "${frontend_status}" != "fail" && "${backend_status}" != "fail" ]]; then
+    printf '%s\n' '- No automated review findings from the configured build-and-test pass.'
+  else
+    printf '%s\n' '- Automated review detected at least one failing verification step.'
+  fi)
+
+## Raw Output
+
+\`\`\`
+${frontend_output}
+
+${backend_output}
+\`\`\`
+EOF
+
+  printf 'Wrote review report: %s\n' "${REPORT_DIR}/review.md"
+  [[ "${frontend_status}" != "fail" && "${backend_status}" != "fail" ]]
+}
+
+qa() {
+  load_config
+  bootstrap >/dev/null
+  local qa_status="pass"
+  local qa_output=""
+
+  if [[ -n "${QA_CMD}" ]]; then
+    if ! qa_output="$(cd "${ROOT_DIR}" && bash -lc "${QA_CMD}" 2>&1)"; then
+      qa_status="fail"
+    fi
+  else
+    qa_output="No QA_CMD configured."
+  fi
+
+  cat > "${REPORT_DIR}/qa.md" <<EOF
+# QA Report
+
+## Date
+
+${NOW}
+
+## Summary
+
+- qa gate: ${qa_status}
+
+## Notes
+
+\`\`\`
+${qa_output}
+\`\`\`
+EOF
+
+  printf 'Wrote QA report: %s\n' "${REPORT_DIR}/qa.md"
+  [[ "${qa_status}" == "pass" ]]
+}
+
+ceo_review() {
+  bootstrap >/dev/null
+  render_template "${TEMPLATE_DIR}/ceo-review.md" "${REPORT_DIR}/ceo-review.md"
+  printf 'Wrote CEO review: %s\n' "${REPORT_DIR}/ceo-review.md"
+}
+
+security_review() {
+  bootstrap >/dev/null
+  render_template "${TEMPLATE_DIR}/security-review.md" "${REPORT_DIR}/security-review.md"
+  printf 'Wrote security review: %s\n' "${REPORT_DIR}/security-review.md"
+}
+
+handoff() {
+  bootstrap >/dev/null
+  local title
+  title="$(sed -n '5p' "${STATE_DIR}/current-slice.md" | tr -d '\r')"
+  cat > "${REPORT_DIR}/handoff.md" <<EOF
+# Handoff
+
+## Date
+
+${NOW}
+
+## Current Slice
+
+${title}
+
+## Completed
+
+- Review report refreshed at \`${REPORT_DIR}/review.md\`
+- QA report refreshed at \`${REPORT_DIR}/qa.md\`
+- CEO review refreshed at \`${REPORT_DIR}/ceo-review.md\`
+- Security review refreshed at \`${REPORT_DIR}/security-review.md\`
+- Current slice tracked at \`${STATE_DIR}/current-slice.md\`
+
+## Next
+
+- Continue the active slice or open a new one with \`prstack slice "Title"\`
+- Use \`prstack review\` before structural merges
+- Use \`prstack qa\` after runtime changes
+- Use \`prstack ceo-review\` and \`prstack security-review\` to keep product and risk guidance current
+
+## Risks
+
+- Ship flow is local-report based until you wire PR-aware automation
+EOF
+
+  printf 'Wrote handoff report: %s\n' "${REPORT_DIR}/handoff.md"
+}
+
+loop() {
+  ensure_ralph
+  local iterations="1"
+  local no_commit=""
+
+  if [[ $# -ge 1 && "$1" =~ ^[0-9]+$ ]]; then
+    iterations="$1"
+    shift
+  fi
+
+  if [[ "${1:-}" == "--no-commit" ]]; then
+    no_commit="--no-commit"
+  fi
+
+  printf 'Running Ralph loop for %s iteration(s)%s\n' "${iterations}" "${no_commit:+ (no commit)}"
+  (cd "${ROOT_DIR}" && ./.agents/ralph/loop.sh build "${iterations}" ${no_commit})
+
+  review
+  qa
+  ceo_review
+  security_review
+  handoff
+}
+
+ship() {
+  bootstrap >/dev/null
+  review
+  qa
+  ceo_review
+  security_review
+  handoff
+  cat > "${REPORT_DIR}/ship.md" <<EOF
+# Ship Report
+
+## Date
+
+${NOW}
+
+## Status
+
+- review completed
+- qa completed
+- ceo review completed
+- security review completed
+- handoff prepared
+
+## Notes
+
+- This is a local ship gate, not PR automation.
+- Use the generated reports under \`${REPORT_DIR}\` as the release packet.
+EOF
+  printf 'Wrote ship report: %s\n' "${REPORT_DIR}/ship.md"
+}
+
+main() {
+  if [[ $# -lt 1 ]]; then
+    usage
+    exit 1
+  fi
+
+  case "$1" in
+    bootstrap)
+      bootstrap
+      ;;
+    install)
+      install
+      ;;
+    dev)
+      dev
+      ;;
+    plan)
+      shift
+      plan "${*:-Current Implementation Slice}"
+      ;;
+    slice)
+      shift
+      slice "${*:-Implementation Slice}"
+      ;;
+    ralph-install)
+      ralph_install
+      ;;
+    ralph-ping)
+      ralph_ping
+      ;;
+    loop)
+      shift
+      loop "$@"
+      ;;
+    ceo-review)
+      ceo_review
+      ;;
+    security-review)
+      security_review
+      ;;
+    review)
+      review
+      ;;
+    qa)
+      qa
+      ;;
+    ship)
+      ship
+      ;;
+    handoff)
+      handoff
+      ;;
+    status)
+      status
+      ;;
+    *)
+      usage
+      exit 1
+      ;;
+  esac
+}
+
+main "$@"

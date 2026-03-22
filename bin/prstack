@@ -19,6 +19,22 @@ FRONTEND_BUILD_CMD=""
 BACKEND_TEST_CMD=""
 QA_CMD=""
 RALPH_ENABLED="true"
+PROJECT_NAME=""
+PROJECT_DOMAIN=""
+PRODUCT_POSITIONING=""
+PRODUCT_WHATS_WORKING=""
+PRODUCT_GAPS=""
+PRODUCT_DIRECTION=""
+PRODUCT_PRIORITIES=""
+SECURITY_POSTURE=""
+SECURITY_FINDINGS=""
+SECURITY_GUIDANCE=""
+SECURITY_NEXT=""
+ARCHITECTURE_STATUS=""
+ARCHITECTURE_DECISIONS=""
+ARCHITECTURE_RISKS=""
+ARCHITECTURE_NEXT=""
+RALPH_PRD_PATH=".agents/tasks/prd.json"
 
 load_config() {
   if [[ -f "${CONFIG_PATH}" ]]; then
@@ -48,6 +64,36 @@ run_configured_command() {
   (cd "${ROOT_DIR}" && bash -lc "${cmd}")
 }
 
+join_list() {
+  local input="$1"
+  if [[ -z "${input}" ]]; then
+    return
+  fi
+  printf '%s\n' "${input}" | tr '|' '\n' | sed 's/^/- /'
+}
+
+project_label() {
+  if [[ -n "${PROJECT_NAME}" ]]; then
+    printf '%s' "${PROJECT_NAME}"
+  else
+    basename "${ROOT_DIR}"
+  fi
+}
+
+current_slice_title() {
+  if [[ -f "${STATE_DIR}/current-slice.md" ]]; then
+    sed -n '9p' "${STATE_DIR}/current-slice.md" | tr -d '\r'
+  fi
+}
+
+open_tasks_count() {
+  if [[ -f "${STATE_DIR}/tasks.md" ]]; then
+    grep -c '^\- \[ \]' "${STATE_DIR}/tasks.md" || true
+  else
+    printf '0'
+  fi
+}
+
 usage() {
   cat <<'EOF'
 Usage:
@@ -61,6 +107,7 @@ Usage:
   prstack loop [n] [--no-commit]
   prstack ceo-review
   prstack security-review
+  prstack architect-review
   prstack review
   prstack qa
   prstack ship
@@ -100,6 +147,10 @@ bootstrap() {
     render_template "${TEMPLATE_DIR}/security-review.md" "${REPORT_DIR}/security-review.md"
   fi
 
+  if [[ ! -f "${REPORT_DIR}/architect-review.md" ]]; then
+    render_template "${TEMPLATE_DIR}/architect-review.md" "${REPORT_DIR}/architect-review.md"
+  fi
+
   if [[ ! -f "${REPORT_DIR}/handoff.md" ]]; then
     render_template "${TEMPLATE_DIR}/handoff.md" "${REPORT_DIR}/handoff.md"
   fi
@@ -120,6 +171,7 @@ status() {
   printf 'QA Report: %s\n' "${REPORT_DIR}/qa.md"
   printf 'CEO Review: %s\n' "${REPORT_DIR}/ceo-review.md"
   printf 'Security Review: %s\n' "${REPORT_DIR}/security-review.md"
+  printf 'Architect Review: %s\n' "${REPORT_DIR}/architect-review.md"
   printf 'Handoff: %s\n' "${REPORT_DIR}/handoff.md"
   printf 'Ralph Installed: %s\n' "$(if [[ -f "${ROOT_DIR}/.agents/ralph/loop.sh" ]]; then echo yes; else echo no; fi)"
 
@@ -173,7 +225,7 @@ ralph_install() {
   cp "${RALPH_SOURCE_DIR}/references/GUARDRAILS.md" "${ROOT_DIR}/.agents/ralph/references/GUARDRAILS.md"
   cp "${RALPH_SOURCE_DIR}/references/CONTEXT_ENGINEERING.md" "${ROOT_DIR}/.agents/ralph/references/CONTEXT_ENGINEERING.md"
   chmod +x "${ROOT_DIR}/.agents/ralph/loop.sh" "${ROOT_DIR}/.agents/ralph/log-activity.sh"
-  if [[ ! -f "${ROOT_DIR}/.agents/tasks/prd.json" ]]; then
+  if ! find "${ROOT_DIR}/.agents/tasks" -maxdepth 1 -name 'prd*.json' | grep -q .; then
     cp "${PRSTACK_HOME}/examples/city-expansion-sim/prd.example.json" "${ROOT_DIR}/.agents/tasks/prd.json"
   fi
   printf 'Installed Ralph assets into %s/.agents/ralph\n' "${ROOT_DIR}"
@@ -292,15 +344,107 @@ EOF
 }
 
 ceo_review() {
+  load_config
   bootstrap >/dev/null
-  render_template "${TEMPLATE_DIR}/ceo-review.md" "${REPORT_DIR}/ceo-review.md"
+  local slice_title
+  slice_title="$(current_slice_title)"
+  local open_count
+  open_count="$(open_tasks_count)"
+  cat > "${REPORT_DIR}/ceo-review.md" <<EOF
+# CEO Review
+
+## Date
+
+${NOW}
+
+## Product Position
+
+- Project: $(project_label)
+- Domain: ${PROJECT_DOMAIN:-Unspecified}
+- Active slice: ${slice_title:-Unspecified}
+$(join_list "${PRODUCT_POSITIONING:-Working toward a clearer product loop and stronger differentiation.}")
+
+## What Is Working
+
+$(join_list "${PRODUCT_WHATS_WORKING:-The repo has a runnable workflow surface and a verified build/test loop.}")
+
+## Missing To Reach A Real Product
+
+$(join_list "${PRODUCT_GAPS:-Open product gaps are not yet configured in project.env.}")
+
+## Direction
+
+$(join_list "${PRODUCT_DIRECTION:-The next slice should make the user loop sharper and more consequential.}")
+
+## Immediate Priorities
+
+- Open backlog items: ${open_count}
+$(join_list "${PRODUCT_PRIORITIES:-Choose the highest-value backlog item and ship it through review and QA.}")
+EOF
   printf 'Wrote CEO review: %s\n' "${REPORT_DIR}/ceo-review.md"
 }
 
 security_review() {
+  load_config
   bootstrap >/dev/null
-  render_template "${TEMPLATE_DIR}/security-review.md" "${REPORT_DIR}/security-review.md"
+  cat > "${REPORT_DIR}/security-review.md" <<EOF
+# Security Review
+
+## Date
+
+${NOW}
+
+## Overall Assessment
+
+- Project: $(project_label)
+$(join_list "${SECURITY_POSTURE:-Current security posture is not yet configured in project.env.}")
+
+## Findings
+
+$(join_list "${SECURITY_FINDINGS:-Project-specific findings are not yet configured.}")
+
+## Guidance
+
+$(join_list "${SECURITY_GUIDANCE:-Define local-safe defaults separately from deployment-safe requirements.}")
+
+## Next Security Work
+
+$(join_list "${SECURITY_NEXT:-Pick the highest-risk trust boundary and harden it next.}")
+EOF
   printf 'Wrote security review: %s\n' "${REPORT_DIR}/security-review.md"
+}
+
+architect_review() {
+  load_config
+  bootstrap >/dev/null
+  local open_count
+  open_count="$(open_tasks_count)"
+  cat > "${REPORT_DIR}/architect-review.md" <<EOF
+# Architect Review
+
+## Date
+
+${NOW}
+
+## Status
+
+- Project: $(project_label)
+- Open backlog items: ${open_count}
+$(join_list "${ARCHITECTURE_STATUS:-Architecture status is not yet configured in project.env.}")
+
+## Decisions
+
+$(join_list "${ARCHITECTURE_DECISIONS:-No project-specific architecture decisions are configured.}")
+
+## Risks
+
+$(join_list "${ARCHITECTURE_RISKS:-No project-specific architecture risks are configured.}")
+
+## Next Architecture Work
+
+$(join_list "${ARCHITECTURE_NEXT:-Choose the next structural simplification or scaling constraint to address.}")
+EOF
+  printf 'Wrote architect review: %s\n' "${REPORT_DIR}/architect-review.md"
 }
 
 handoff() {
@@ -324,6 +468,7 @@ ${title}
 - QA report refreshed at \`${REPORT_DIR}/qa.md\`
 - CEO review refreshed at \`${REPORT_DIR}/ceo-review.md\`
 - Security review refreshed at \`${REPORT_DIR}/security-review.md\`
+- Architect review refreshed at \`${REPORT_DIR}/architect-review.md\`
 - Current slice tracked at \`${STATE_DIR}/current-slice.md\`
 
 ## Next
@@ -332,6 +477,7 @@ ${title}
 - Use \`prstack review\` before structural merges
 - Use \`prstack qa\` after runtime changes
 - Use \`prstack ceo-review\` and \`prstack security-review\` to keep product and risk guidance current
+- Use \`prstack architect-review\` to keep structural decisions explicit
 
 ## Risks
 
@@ -362,6 +508,7 @@ loop() {
   qa
   ceo_review
   security_review
+  architect_review
   handoff
 }
 
@@ -371,6 +518,7 @@ ship() {
   qa
   ceo_review
   security_review
+  architect_review
   handoff
   cat > "${REPORT_DIR}/ship.md" <<EOF
 # Ship Report
@@ -385,6 +533,7 @@ ${NOW}
 - qa completed
 - ceo review completed
 - security review completed
+- architect review completed
 - handoff prepared
 
 ## Notes
@@ -434,6 +583,9 @@ main() {
       ;;
     security-review)
       security_review
+      ;;
+    architect-review)
+      architect_review
       ;;
     review)
       review

@@ -5,7 +5,7 @@
 It provides:
 
 - repo-local planning and task state
-- review, QA, security, and product review reports
+- review, QA, product, security, and architecture review reports
 - bounded autonomous build loops through Ralph
 - simple file-based templates that are easy to inspect and customize
 
@@ -32,6 +32,7 @@ From a project root:
 /path/to/prstack/bin/prstack loop 1 --no-commit
 /path/to/prstack/bin/prstack ceo-review
 /path/to/prstack/bin/prstack security-review
+/path/to/prstack/bin/prstack architect-review
 /path/to/prstack/bin/prstack review
 /path/to/prstack/bin/prstack qa
 /path/to/prstack/bin/prstack ship
@@ -50,6 +51,12 @@ FRONTEND_BUILD_CMD="cd frontend && npm run build"
 BACKEND_TEST_CMD="cd backend && uv run --with pytest pytest -q"
 QA_CMD="cd backend && uv run python smoke.py"
 RALPH_ENABLED="true"
+PROJECT_NAME="city_expansion_sim"
+PROJECT_DOMAIN="city strategy simulation"
+PRODUCT_POSITIONING="Build a city-growth simulator that feels like a strategy product rather than a static demo"
+SECURITY_POSTURE="Local prototype is acceptable; hosted deployment still needs stricter controls"
+ARCHITECTURE_DECISIONS="District-based world model is the shipping core"
+RALPH_PRD_PATH=".agents/tasks/prd.json"
 ```
 
 See [project.env.example](/home/prithiv/Prithiv_Projects/prstack/examples/city-expansion-sim/project.env.example).
@@ -61,6 +68,7 @@ See [project.env.example](/home/prithiv/Prithiv_Projects/prstack/examples/city-e
 - `prstack` owns workflow and reporting
 - Ralph is an optional execution loop inside that workflow
 - `prstack loop 1` is the intended autonomous path, not an open-ended loop
+- the bundled loop reads a PRD, selects the next `todo` story, runs one bounded agent execution, and marks it done only after the completion signal
 
 Install the bundled Ralph assets into a project with:
 
@@ -72,5 +80,5 @@ Install the bundled Ralph assets into a project with:
 
 - state is stored under `.prstack/state`
 - reports are markdown, not hidden binary metadata
-- specialist roles are built in through `ceo-review` and `security-review`
+- specialist roles are built in through `ceo-review`, `security-review`, and `architect-review`
 - projects can override templates or extend the generated state after bootstrap

@@ -98,6 +98,19 @@ open_tasks_count() {
   fi
 }
 
+first_bullet() {
+  local path="$1"
+  if [[ -f "${path}" ]]; then
+    grep '^- ' "${path}" \
+      | grep -v -- '^- Project:' \
+      | grep -v -- '^- Domain:' \
+      | grep -v -- '^- Active slice:' \
+      | grep -v -- '^- Open backlog items:' \
+      | head -n 1 \
+      | sed 's/^- //'
+  fi
+}
+
 usage() {
   cat <<'EOF'
 Usage:
@@ -182,6 +195,7 @@ status() {
   printf 'Security Review: %s\n' "${REPORT_DIR}/security-review.md"
   printf 'Architect Review: %s\n' "${REPORT_DIR}/architect-review.md"
   printf 'Staff Engineer Review: %s\n' "${REPORT_DIR}/staff-engineer-review.md"
+  printf 'Role Summary: %s\n' "${REPORT_DIR}/role-summary.md"
   printf 'Handoff: %s\n' "${REPORT_DIR}/handoff.md"
   printf 'Ralph Installed: %s\n' "$(if [[ -f "${ROOT_DIR}/.agents/ralph/loop.sh" ]]; then echo yes; else echo no; fi)"
 
@@ -532,6 +546,25 @@ EOF
   printf 'Wrote handoff report: %s\n' "${REPORT_DIR}/handoff.md"
 }
 
+role_summary() {
+  bootstrap >/dev/null
+  cat > "${REPORT_DIR}/role-summary.md" <<EOF
+# Role Summary
+
+## Date
+
+${NOW}
+
+## Highlights
+
+- CEO: $(first_bullet "${REPORT_DIR}/ceo-review.md")
+- Security: $(first_bullet "${REPORT_DIR}/security-review.md")
+- Architect: $(first_bullet "${REPORT_DIR}/architect-review.md")
+- Staff Engineer: $(first_bullet "${REPORT_DIR}/staff-engineer-review.md")
+EOF
+  printf 'Wrote role summary: %s\n' "${REPORT_DIR}/role-summary.md"
+}
+
 loop() {
   ensure_ralph
   local iterations="1"
@@ -555,6 +588,7 @@ loop() {
   security_review
   architect_review
   staff_engineer_review
+  role_summary
   handoff
 }
 
@@ -566,6 +600,7 @@ ship() {
   security_review
   architect_review
   staff_engineer_review
+  role_summary
   handoff
   cat > "${REPORT_DIR}/ship.md" <<EOF
 # Ship Report
@@ -582,6 +617,7 @@ ${NOW}
 - security review completed
 - architect review completed
 - staff engineer review completed
+- role summary prepared
 - handoff prepared
 
 ## Notes

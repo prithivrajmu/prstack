@@ -1,0 +1,17 @@
+{
+  "title": "Example PRD",
+  "stories": [
+    {
+      "id": "US-001",
+      "title": "Replace this example story",
+      "status": "todo",
+      "tasks": [
+        "Describe one bounded implementation slice"
+      ],
+      "verification": [
+        "Run the configured prstack review gate",
+        "Run the configured prstack qa gate"
+      ]
+    }
+  ]
+}

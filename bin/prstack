@@ -173,6 +173,10 @@ bootstrap() {
     render_template "${TEMPLATE_DIR}/staff-engineer-review.md" "${REPORT_DIR}/staff-engineer-review.md"
   fi
 
+  if [[ ! -f "${REPORT_DIR}/loop.md" ]]; then
+    render_template "${TEMPLATE_DIR}/loop.md" "${REPORT_DIR}/loop.md"
+  fi
+
   if [[ ! -f "${REPORT_DIR}/handoff.md" ]]; then
     render_template "${TEMPLATE_DIR}/handoff.md" "${REPORT_DIR}/handoff.md"
   fi
@@ -195,6 +199,7 @@ status() {
   printf 'Security Review: %s\n' "${REPORT_DIR}/security-review.md"
   printf 'Architect Review: %s\n' "${REPORT_DIR}/architect-review.md"
   printf 'Staff Engineer Review: %s\n' "${REPORT_DIR}/staff-engineer-review.md"
+  printf 'Loop Report: %s\n' "${REPORT_DIR}/loop.md"
   printf 'Role Summary: %s\n' "${REPORT_DIR}/role-summary.md"
   printf 'Handoff: %s\n' "${REPORT_DIR}/handoff.md"
   printf 'Ralph Installed: %s\n' "$(if [[ -f "${ROOT_DIR}/.agents/ralph/loop.sh" ]]; then echo yes; else echo no; fi)"
@@ -259,15 +264,15 @@ ensure_ralph() {
   load_config
   if [[ "${RALPH_ENABLED}" != "true" ]]; then
     printf 'Ralph is disabled in %s\n' "${CONFIG_PATH}" >&2
-    exit 1
+    return 1
   fi
   if [[ ! -x "${ROOT_DIR}/node_modules/.bin/ralph" && ! -x "$(command -v ralph 2>/dev/null || true)" ]]; then
     printf 'Ralph is not installed. Add it to the project or install globally.\n' >&2
-    exit 1
+    return 1
   fi
   if [[ ! -f "${ROOT_DIR}/.agents/ralph/loop.sh" ]]; then
     printf 'Ralph assets are missing. Run prstack ralph-install first.\n' >&2
-    exit 1
+    return 1
   fi
 }
 
@@ -527,6 +532,7 @@ ${title}
 - Security review refreshed at \`${REPORT_DIR}/security-review.md\`
 - Architect review refreshed at \`${REPORT_DIR}/architect-review.md\`
 - Staff engineer review refreshed at \`${REPORT_DIR}/staff-engineer-review.md\`
+- Loop report refreshed at \`${REPORT_DIR}/loop.md\`
 - Current slice tracked at \`${STATE_DIR}/current-slice.md\`
 
 ## Next
@@ -537,6 +543,7 @@ ${title}
 - Use \`prstack ceo-review\` and \`prstack security-review\` to keep product and risk guidance current
 - Use \`prstack architect-review\` to keep structural decisions explicit
 - Use \`prstack staff-engineer-review\` to keep implementation quality and delivery risks explicit
+- Use \`prstack loop\` only in bounded mode and inspect \`loop.md\` when the runner is unavailable
 
 ## Risks
 
@@ -566,9 +573,11 @@ EOF
 }
 
 loop() {
-  ensure_ralph
+  bootstrap >/dev/null
   local iterations="1"
   local no_commit=""
+  local loop_output=""
+  local loop_status="pass"
 
   if [[ $# -ge 1 && "$1" =~ ^[0-9]+$ ]]; then
     iterations="$1"
@@ -579,8 +588,49 @@ loop() {
     no_commit="--no-commit"
   fi
 
+  if ! loop_output="$(ensure_ralph 2>&1)"; then
+    loop_status="fail"
+  else
   printf 'Running Ralph loop for %s iteration(s)%s\n' "${iterations}" "${no_commit:+ (no commit)}"
-  (cd "${ROOT_DIR}" && ./.agents/ralph/loop.sh build "${iterations}" ${no_commit})
+    if ! loop_output="$(cd "${ROOT_DIR}" && ./.agents/ralph/loop.sh build "${iterations}" ${no_commit} 2>&1)"; then
+      loop_status="fail"
+    fi
+  fi
+
+  cat > "${REPORT_DIR}/loop.md" <<EOF
+# Loop Report
+
+## Date
+
+${NOW}
+
+## Status
+
+- ralph loop: ${loop_status}
+
+## Notes
+
+$(if grep -qi 'usage limit' <<<"${loop_output}"; then
+    printf '%s\n' '- External Codex runner capacity was unavailable during this loop run.'
+  elif grep -qi 'not available' <<<"${loop_output}" || grep -qi 'not found' <<<"${loop_output}"; then
+    printf '%s\n' '- Ralph or the configured agent runner was unavailable in this environment.'
+  elif [[ "${loop_status}" == "pass" ]]; then
+    printf '%s\n' '- Bounded Ralph loop completed successfully.'
+  else
+    printf '%s\n' '- Bounded Ralph loop failed. Inspect the raw output below.'
+  fi)
+
+## Raw Output
+
+\`\`\`
+${loop_output}
+\`\`\`
+EOF
+  printf 'Wrote loop report: %s\n' "${REPORT_DIR}/loop.md"
+
+  if [[ "${loop_status}" != "pass" ]]; then
+    return 1
+  fi
 
   review
   qa

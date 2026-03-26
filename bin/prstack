@@ -34,6 +34,10 @@ ARCHITECTURE_STATUS=""
 ARCHITECTURE_DECISIONS=""
 ARCHITECTURE_RISKS=""
 ARCHITECTURE_NEXT=""
+STAFF_ENGINEERING_STATUS=""
+STAFF_ENGINEERING_FINDINGS=""
+STAFF_ENGINEERING_GUIDANCE=""
+STAFF_ENGINEERING_NEXT=""
 RALPH_PRD_PATH=".agents/tasks/prd.json"
 
 load_config() {
@@ -108,6 +112,7 @@ Usage:
   prstack ceo-review
   prstack security-review
   prstack architect-review
+  prstack staff-engineer-review
   prstack review
   prstack qa
   prstack ship
@@ -151,6 +156,10 @@ bootstrap() {
     render_template "${TEMPLATE_DIR}/architect-review.md" "${REPORT_DIR}/architect-review.md"
   fi
 
+  if [[ ! -f "${REPORT_DIR}/staff-engineer-review.md" ]]; then
+    render_template "${TEMPLATE_DIR}/staff-engineer-review.md" "${REPORT_DIR}/staff-engineer-review.md"
+  fi
+
   if [[ ! -f "${REPORT_DIR}/handoff.md" ]]; then
     render_template "${TEMPLATE_DIR}/handoff.md" "${REPORT_DIR}/handoff.md"
   fi
@@ -172,6 +181,7 @@ status() {
   printf 'CEO Review: %s\n' "${REPORT_DIR}/ceo-review.md"
   printf 'Security Review: %s\n' "${REPORT_DIR}/security-review.md"
   printf 'Architect Review: %s\n' "${REPORT_DIR}/architect-review.md"
+  printf 'Staff Engineer Review: %s\n' "${REPORT_DIR}/staff-engineer-review.md"
   printf 'Handoff: %s\n' "${REPORT_DIR}/handoff.md"
   printf 'Ralph Installed: %s\n' "$(if [[ -f "${ROOT_DIR}/.agents/ralph/loop.sh" ]]; then echo yes; else echo no; fi)"
 
@@ -447,6 +457,39 @@ EOF
   printf 'Wrote architect review: %s\n' "${REPORT_DIR}/architect-review.md"
 }
 
+staff_engineer_review() {
+  load_config
+  bootstrap >/dev/null
+  local open_count
+  open_count="$(open_tasks_count)"
+  cat > "${REPORT_DIR}/staff-engineer-review.md" <<EOF
+# Staff Engineer Review
+
+## Date
+
+${NOW}
+
+## Status
+
+- Project: $(project_label)
+- Open backlog items: ${open_count}
+$(join_list "${STAFF_ENGINEERING_STATUS:-Staff-engineering status is not yet configured in project.env.}")
+
+## Findings
+
+$(join_list "${STAFF_ENGINEERING_FINDINGS:-No project-specific staff-engineering findings are configured.}")
+
+## Guidance
+
+$(join_list "${STAFF_ENGINEERING_GUIDANCE:-Keep systems simple, verifiable, and contract-driven.}")
+
+## Next Engineering Work
+
+$(join_list "${STAFF_ENGINEERING_NEXT:-Choose the next change that improves reliability, maintainability, or delivery speed.}")
+EOF
+  printf 'Wrote staff engineer review: %s\n' "${REPORT_DIR}/staff-engineer-review.md"
+}
+
 handoff() {
   bootstrap >/dev/null
   local title
@@ -469,6 +512,7 @@ ${title}
 - CEO review refreshed at \`${REPORT_DIR}/ceo-review.md\`
 - Security review refreshed at \`${REPORT_DIR}/security-review.md\`
 - Architect review refreshed at \`${REPORT_DIR}/architect-review.md\`
+- Staff engineer review refreshed at \`${REPORT_DIR}/staff-engineer-review.md\`
 - Current slice tracked at \`${STATE_DIR}/current-slice.md\`
 
 ## Next
@@ -478,6 +522,7 @@ ${title}
 - Use \`prstack qa\` after runtime changes
 - Use \`prstack ceo-review\` and \`prstack security-review\` to keep product and risk guidance current
 - Use \`prstack architect-review\` to keep structural decisions explicit
+- Use \`prstack staff-engineer-review\` to keep implementation quality and delivery risks explicit
 
 ## Risks
 
@@ -509,6 +554,7 @@ loop() {
   ceo_review
   security_review
   architect_review
+  staff_engineer_review
   handoff
 }
 
@@ -519,6 +565,7 @@ ship() {
   ceo_review
   security_review
   architect_review
+  staff_engineer_review
   handoff
   cat > "${REPORT_DIR}/ship.md" <<EOF
 # Ship Report
@@ -534,6 +581,7 @@ ${NOW}
 - ceo review completed
 - security review completed
 - architect review completed
+- staff engineer review completed
 - handoff prepared
 
 ## Notes
@@ -586,6 +634,9 @@ main() {
       ;;
     architect-review)
       architect_review
+      ;;
+    staff-engineer-review)
+      staff_engineer_review
       ;;
     review)
       review

@@ -5,7 +5,7 @@
 It provides:
 
 - repo-local planning and task state
-- review, QA, product, security, and architecture review reports
+- review, QA, product, security, architecture, and staff-engineering review reports
 - bounded autonomous build loops through Ralph
 - simple file-based templates that are easy to inspect and customize
 
@@ -33,6 +33,7 @@ From a project root:
 /path/to/prstack/bin/prstack ceo-review
 /path/to/prstack/bin/prstack security-review
 /path/to/prstack/bin/prstack architect-review
+/path/to/prstack/bin/prstack staff-engineer-review
 /path/to/prstack/bin/prstack review
 /path/to/prstack/bin/prstack qa
 /path/to/prstack/bin/prstack ship
@@ -56,6 +57,7 @@ PROJECT_DOMAIN="city strategy simulation"
 PRODUCT_POSITIONING="Build a city-growth simulator that feels like a strategy product rather than a static demo"
 SECURITY_POSTURE="Local prototype is acceptable; hosted deployment still needs stricter controls"
 ARCHITECTURE_DECISIONS="District-based world model is the shipping core"
+STAFF_ENGINEERING_STATUS="Core workflow and verification are stable"
 RALPH_PRD_PATH=".agents/tasks/prd.json"
 ```
 
@@ -80,5 +82,5 @@ Install the bundled Ralph assets into a project with:
 
 - state is stored under `.prstack/state`
 - reports are markdown, not hidden binary metadata
-- specialist roles are built in through `ceo-review`, `security-review`, and `architect-review`
+- specialist roles are built in through `ceo-review`, `security-review`, `architect-review`, and `staff-engineer-review`
 - projects can override templates or extend the generated state after bootstrap
